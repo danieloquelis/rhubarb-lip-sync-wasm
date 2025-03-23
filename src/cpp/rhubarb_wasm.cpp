@@ -30,7 +30,8 @@ class WebProgressSink : public ProgressSink {
 public:
     void reportProgress(double progress) override {
         // In the future, we could emit a JavaScript event here
-        std::cout << "Progress: " << (progress * 100) << "%" << std::endl;
+        // Uncomment to see progress
+        //std::cout << "Progress: " << (progress * 100) << "%" << std::endl;
     }
 };
 
@@ -126,7 +127,7 @@ char getShapeChar(const Phone& phone) {
 }
 
 // Main function to process audio and generate lip sync data
-LipSyncResult getLipSync(const std::string& audioBase64, const std::string& dialogText = "") {
+emscripten::val getLipSync(const std::string& audioBase64, const std::string& dialogText = "") {
     LipSyncResult result;
     
     try {
@@ -159,22 +160,40 @@ LipSyncResult getLipSync(const std::string& audioBase64, const std::string& dial
         }
         
     } catch (const std::exception& e) {
-        // Handle error
+        // Keep error logging for debugging
         std::cerr << "Error processing audio: " << e.what() << std::endl;
     }
     
-    return result;
+    // Convert vector to JavaScript array
+    emscripten::val mouthCuesArray = emscripten::val::array();
+    for (const auto& cue : result.mouthCues) {
+        emscripten::val cueObj = emscripten::val::object();
+        cueObj.set("start", cue.start);
+        cueObj.set("end", cue.end);
+        cueObj.set("value", cue.value);
+        mouthCuesArray.call<void>("push", cueObj);
+    }
+    
+    emscripten::val resultObj = emscripten::val::object();
+    resultObj.set("mouthCues", mouthCuesArray);
+    return resultObj;
 }
 
 // Bind C++ functions to JavaScript
 EMSCRIPTEN_BINDINGS(rhubarb_wasm) {
+    // Register the MouthCue type
     value_object<MouthCue>("MouthCue")
         .field("start", &MouthCue::start)
         .field("end", &MouthCue::end)
         .field("value", &MouthCue::value);
         
+    // Register the vector<MouthCue> type
+    register_vector<MouthCue>("VectorMouthCue");
+        
+    // Register the LipSyncResult type
     value_object<LipSyncResult>("LipSyncResult")
         .field("mouthCues", &LipSyncResult::mouthCues);
         
-    function("getLipSync", &getLipSync);
+    // Register the getLipSync function with proper return type
+    function("getLipSync", &getLipSync, allow_raw_pointers());
 } 

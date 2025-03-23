@@ -10,6 +10,9 @@
 #include "tools.h"
 #include <codecvt>
 #include <iostream>
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
 
 #ifdef _WIN32
 	#include <Windows.h>
@@ -20,6 +23,11 @@ using std::string;
 using std::vector;
 
 path getBinPath() {
+#ifdef __EMSCRIPTEN__
+	// In WebAssembly, we mount the preloaded files at /res
+	// So we return "/" as the bin path
+	return path("/");
+#else
 	static const path binPath = [] {
 		try {
 			// Determine path length
@@ -47,6 +55,7 @@ path getBinPath() {
 		}
 	}();
 	return binPath;
+#endif
 }
 
 path getBinDirectory() {

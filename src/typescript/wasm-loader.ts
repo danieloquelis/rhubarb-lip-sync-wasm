@@ -1,66 +1,37 @@
-import { RhubarbOptions, LipSyncResult } from "./index";
-
-declare const Module: any;
-
-export interface RhubarbWasmModule {
-  getLipSync: (
-    audioBase64: string,
-    options?: RhubarbOptions
-  ) => Promise<LipSyncResult>;
-}
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+import { RhubarbWasmModule, LipSyncResult, MouthCue } from './types.js';
 
 let wasmModule: RhubarbWasmModule | null = null;
 
 export async function initWasmModule(): Promise<RhubarbWasmModule> {
-  if (!wasmModule) {
-    // Import the WASM module dynamically
-    const rhubarbModule = require("./wasm/rhubarb.js");
-    
-    // Wait for the module to be ready
-    await new Promise<void>((resolve) => {
-      if (rhubarbModule.initialized) {
-        resolve();
-      } else {
-        rhubarbModule.onRuntimeInitialized = () => {
-          resolve();
-        };
+  const __filename = fileURLToPath(import.meta.url);
+  const __dirname = dirname(__filename);
+  const wasmPath = join(__dirname, 'wasm', 'rhubarb.js');
+  
+  const module = await import(wasmPath);
+  const instance = await module.default({
+    locateFile: (path: string) => {
+      if (path.endsWith('.wasm') || path.endsWith('.data')) {
+        return join(__dirname, 'wasm', path);
       }
-    });
+      return path;
+    }
+  });
+  
+  wasmModule = instance;
+  return instance;
+}
 
-    wasmModule = {
-      getLipSync: async (audioBase64: string, options: RhubarbOptions = {}) => {
-        // Convert base64 to Float32Array
-        const binaryString = Buffer.from(audioBase64, "base64").toString(
-          "binary"
-        );
-        const bytes = new Uint8Array(binaryString.length);
-        for (let i = 0; i < binaryString.length; i++) {
-          bytes[i] = binaryString.charCodeAt(i);
-        }
-        const audioData = new Float32Array(bytes.buffer);
-
-        // PocketSphinx requires 16kHz audio
-        const result = await rhubarbModule.getLipSync(
-          audioData,
-          16000,
-          options.dialogText || ""
-        );
-        return {
-          mouthCues: result.map((cue: any) => ({
-            start: cue.start,
-            end: cue.end,
-            value: cue.phoneme,
-          })),
-        };
-      },
-    };
-  }
-  if (!wasmModule) {
-    throw new Error("Failed to initialize WASM module");
-  }
-  return wasmModule;
+export async function getLipSyncData(
+  audioBase64: string,
+  dialogText?: string
+): Promise<LipSyncResult> {
+  const module = await initWasmModule();
+  const result = module.getLipSync(audioBase64, dialogText || '');
+  return result;
 }
 
 export function getWasmModule(): RhubarbWasmModule | null {
   return wasmModule;
-}
+} 

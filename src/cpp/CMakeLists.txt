@@ -225,7 +225,7 @@ set(SOURCES
 add_executable(rhubarb_wasm ${SOURCES})
 set_target_properties(rhubarb_wasm PROPERTIES
     OUTPUT_NAME "rhubarb"
-    LINK_FLAGS "-s WASM=1 -s EXPORT_ES6=1 -s SINGLE_FILE=0 -s EXPORTED_FUNCTIONS='[\"_malloc\", \"_free\"]' -s EXPORTED_RUNTIME_METHODS='[\"ccall\", \"cwrap\", \"getValue\", \"setValue\"]' -s NO_EXIT_RUNTIME=1 -s ASSERTIONS=0 -s LINKABLE=1 -s EXPORT_ALL=1"
+    LINK_FLAGS "-s WASM=1 -s EXPORT_ES6=1 -s SINGLE_FILE=0 -s EXPORTED_FUNCTIONS='[\"_malloc\", \"_free\"]' -s EXPORTED_RUNTIME_METHODS='[\"ccall\", \"cwrap\", \"getValue\", \"setValue\"]' -s NO_EXIT_RUNTIME=1 -s ASSERTIONS=2 -s LINKABLE=1 -s EXPORT_ALL=1 -s NO_DISABLE_EXCEPTION_CATCHING=1 -s ALLOW_MEMORY_GROWTH=1 --preload-file ${CMAKE_CURRENT_SOURCE_DIR}/rhubarb/res@/res"
 )
 
 target_compile_options(rhubarb_wasm PRIVATE "-fexceptions")
