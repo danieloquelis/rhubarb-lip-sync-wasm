@@ -1,5 +1,4 @@
 export interface RhubarbOptions {
-  recognizerType?: 'pocketSphinx' | 'phonetic';
   dialogText?: string;
 }
 
@@ -44,6 +43,6 @@ export class Rhubarb {
     options: RhubarbOptions = {}
   ): Promise<LipSyncResult> {
     const instance = await Rhubarb.getInstance();
-    return instance.wasmModule.getLipSync(audioBase64, options.dialogText || '');
+    return instance.wasmModule.getLipSync(audioBase64, options);
   }
 } 

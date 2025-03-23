@@ -3,51 +3,49 @@ import { RhubarbOptions, LipSyncResult } from './index';
 declare const Module: any;
 
 export interface RhubarbWasmModule {
-  getLipSync: (audioBase64: string, dialogText: string) => Promise<LipSyncResult>;
+  getLipSync: (audioBase64: string, options?: RhubarbOptions) => Promise<LipSyncResult>;
 }
 
 let wasmModule: RhubarbWasmModule | null = null;
 
 export async function initWasmModule(): Promise<RhubarbWasmModule> {
   if (!wasmModule) {
-    if (process.env.NODE_ENV === 'test') {
-      // Use mock in test environment
-      const { mockWasmModule } = await import('../__tests__/__mocks__/wasm-mock');
-      wasmModule = mockWasmModule;
-    } else {
-      // Import the WASM module dynamically
-      require('../../dist/wasm/rhubarb.js');
-      
-      // Wait for the module to be ready
-      await new Promise<void>((resolve) => {
-        if (Module.ready) {
-          resolve();
-        } else {
-          Module.ready = resolve;
-        }
-      });
+    // Import the WASM module dynamically
+    require('../../dist/wasm/rhubarb.js');
+    
+    // Wait for the module to be ready
+    await new Promise<void>((resolve) => {
+      if (Module.ready) {
+        resolve();
+      } else {
+        Module.ready = resolve;
+      }
+    });
 
-      wasmModule = {
-        getLipSync: async (audioBase64: string, dialogText: string) => {
-          // Convert base64 to Float32Array
-          const binaryString = Buffer.from(audioBase64, 'base64').toString('binary');
-          const bytes = new Uint8Array(binaryString.length);
-          for (let i = 0; i < binaryString.length; i++) {
-            bytes[i] = binaryString.charCodeAt(i);
-          }
-          const audioData = new Float32Array(bytes.buffer);
-          
-          const result = await Module.getLipSync(audioData, 44100); // Assuming 44.1kHz sample rate
-          return {
-            mouthCues: result.map((cue: any) => ({
-              start: cue.start,
-              end: cue.end,
-              value: cue.phoneme
-            }))
-          };
+    wasmModule = {
+      getLipSync: async (audioBase64: string, options: RhubarbOptions = {}) => {
+        // Convert base64 to Float32Array
+        const binaryString = Buffer.from(audioBase64, 'base64').toString('binary');
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
         }
-      };
-    }
+        const audioData = new Float32Array(bytes.buffer);
+        
+        // PocketSphinx requires 16kHz audio
+        const result = await Module.getLipSync(audioData, 16000, options.dialogText || '');
+        return {
+          mouthCues: result.map((cue: any) => ({
+            start: cue.start,
+            end: cue.end,
+            value: cue.phoneme
+          }))
+        };
+      }
+    };
+  }
+  if (!wasmModule) {
+    throw new Error('Failed to initialize WASM module');
   }
   return wasmModule;
 }

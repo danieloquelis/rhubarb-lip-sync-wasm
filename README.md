@@ -43,7 +43,6 @@ import { Rhubarb } from 'rhubarb-lip-sync-wasm';
 async function generateLipSync(audioBase64: string) {
   try {
     const result = await Rhubarb.getLipSync(audioBase64, {
-      recognizerType: 'pocketSphinx', // or 'phonetic'
       dialogText: 'Optional dialog text for better recognition'
     });
 
@@ -65,8 +64,7 @@ Generates lip sync data from an audio file.
 
 - `audioBase64`: string - Base64 encoded audio file (WAV format)
 - `options`: RhubarbOptions (optional)
-  - `recognizerType`: 'pocketSphinx' | 'phonetic' - Type of speech recognition to use
-  - `dialogText`: string - Optional text of the dialog for better recognition
+  - `dialogText`: string - Optional text to guide the recognition process. If provided, it helps PocketSphinx better recognize the speech. If not provided, PocketSphinx will perform recognition without text guidance.
 
 #### Returns
 
@@ -74,7 +72,7 @@ Promise<LipSyncResult> containing:
 - `mouthCues`: Array of mouth shapes with timings
   - `start`: number - Start time in seconds
   - `end`: number - End time in seconds
-  - `value`: string - Mouth shape value
+  - `value`: string - Mouth shape value (A-H, X)
 
 ## Development
 
@@ -90,11 +88,7 @@ yarn build
 
 ## How It Works
 
-This package uses WebAssembly to port the C++ implementation of Rhubarb Lip Sync to the web. The original Rhubarb Lip Sync uses various technologies for speech recognition and audio processing:
-
-1. CMU PocketSphinx for speech recognition
-2. Phonetic recognition as a fallback
-3. Advanced audio processing algorithms
+This package uses WebAssembly to port the C++ implementation of Rhubarb Lip Sync to the web. The original Rhubarb Lip Sync uses PocketSphinx for speech recognition and advanced audio processing algorithms.
 
 The WebAssembly port maintains these features while making them available in a JavaScript/TypeScript environment.
 
@@ -104,10 +98,10 @@ While this port aims to maintain feature parity with the original Rhubarb Lip Sy
 
 1. Input is limited to base64-encoded WAV files
 2. All processing is done in-memory
-3. Optimized for use in Node.js and Next.js applications
+3. Optimized for use in web applications
 4. Added TypeScript support
 5. Simplified API for web use
-6. Enhanced for real-time AI agent responses
+6. Uses PocketSphinx for speech recognition (requires 16kHz sample rate audio input)
 
 ## License
 
