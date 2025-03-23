@@ -18,10 +18,12 @@ export async function initWasmModule(): Promise<RhubarbWasmModule> {
     
     // Wait for the module to be ready
     await new Promise<void>((resolve) => {
-      if (rhubarbModule.ready) {
+      if (rhubarbModule.initialized) {
         resolve();
       } else {
-        rhubarbModule.ready = resolve;
+        rhubarbModule.onRuntimeInitialized = () => {
+          resolve();
+        };
       }
     });
 
