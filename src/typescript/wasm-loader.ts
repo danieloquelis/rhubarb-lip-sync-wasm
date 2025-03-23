@@ -14,14 +14,14 @@ let wasmModule: RhubarbWasmModule | null = null;
 export async function initWasmModule(): Promise<RhubarbWasmModule> {
   if (!wasmModule) {
     // Import the WASM module dynamically
-    require("./wasm/rhubarb.js");
-
+    const rhubarbModule = require("./wasm/rhubarb.js");
+    
     // Wait for the module to be ready
     await new Promise<void>((resolve) => {
-      if (Module.ready) {
+      if (rhubarbModule.ready) {
         resolve();
       } else {
-        Module.ready = resolve;
+        rhubarbModule.ready = resolve;
       }
     });
 
@@ -38,7 +38,7 @@ export async function initWasmModule(): Promise<RhubarbWasmModule> {
         const audioData = new Float32Array(bytes.buffer);
 
         // PocketSphinx requires 16kHz audio
-        const result = await Module.getLipSync(
+        const result = await rhubarbModule.getLipSync(
           audioData,
           16000,
           options.dialogText || ""
