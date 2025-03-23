@@ -3068,6 +3068,7 @@ __metadata:
     "@types/jest": "npm:^29.5.12"
     "@types/node": "npm:^20.11.19"
     jest: "npm:^29.7.0"
+    jest-environment-node: "npm:^29.7.0"
     ts-jest: "npm:^29.1.2"
     ts-node: "npm:^10.9.2"
     typescript: "npm:^5.3.3"
