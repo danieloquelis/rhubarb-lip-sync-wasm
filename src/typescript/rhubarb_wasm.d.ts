@@ -4,5 +4,8 @@ export interface LipSyncResult {
   end: number;
 }
 
-export function getLipSync(audioData: Float32Array, sampleRate: number): LipSyncResult[];
-export default function init(): Promise<void>; 
+export function getLipSync(
+  audioData: Float32Array,
+  sampleRate: number
+): LipSyncResult[];
+export default function init(): Promise<void>;

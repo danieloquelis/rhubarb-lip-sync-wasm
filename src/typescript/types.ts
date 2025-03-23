@@ -14,4 +14,4 @@ export interface LipSyncResult {
 
 export interface RhubarbWasmModule {
   getLipSync: (audioBase64: string, dialogText?: string) => LipSyncResult;
-} 
+}

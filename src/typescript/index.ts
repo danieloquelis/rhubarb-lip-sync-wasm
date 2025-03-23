@@ -1,5 +1,5 @@
-import { RhubarbOptions, LipSyncResult, RhubarbWasmModule } from './types.js';
-import { initWasmModule } from './wasm-loader.js';
+import { RhubarbOptions, LipSyncResult, RhubarbWasmModule } from "./types.js";
+import { initWasmModule } from "./wasm-loader.js";
 
 declare global {
   interface Window {
@@ -22,10 +22,13 @@ export class Rhubarb {
     return this.wasmModule;
   }
 
-  static async getLipSync(audioBase64: string, options: RhubarbOptions = {}): Promise<LipSyncResult> {
+  static async getLipSync(
+    audioBase64: string,
+    options: RhubarbOptions = {}
+  ): Promise<LipSyncResult> {
     const module = await this.getModule();
-    return module.getLipSync(audioBase64, options.dialogText || '');
+    return module.getLipSync(audioBase64, options.dialogText || "");
   }
 }
 
-export type { RhubarbOptions, LipSyncResult }; 
+export type { RhubarbOptions, LipSyncResult };
