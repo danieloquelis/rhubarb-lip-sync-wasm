@@ -1,0 +1,29 @@
+# Source files
+src/
+scripts/
+
+# Build files
+build/
+
+# Development files
+.git/
+.gitignore
+.gitattributes
+.yarn/
+.yarnrc.yml
+jest.config.ts
+jest.setup.ts
+tsconfig.json
+
+# Test files
+__tests__/
+__mocks__/
+
+# Development dependencies
+node_modules/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo 
