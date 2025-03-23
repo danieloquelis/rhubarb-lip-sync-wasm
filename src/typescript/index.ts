@@ -1,5 +1,5 @@
-import { RhubarbOptions, LipSyncResult } from './types.js';
-import { initWasmModule, getLipSyncData } from './wasm-loader.js';
+import { RhubarbOptions, LipSyncResult, RhubarbWasmModule } from './types.js';
+import { initWasmModule } from './wasm-loader.js';
 
 declare global {
   interface Window {
@@ -13,32 +13,18 @@ declare global {
 }
 
 export class Rhubarb {
-  private static instance: Rhubarb;
-  private wasmModule: any;
+  private static wasmModule: Promise<RhubarbWasmModule> | null = null;
 
-  private constructor() {
-    this.wasmModule = null;
-  }
-
-  public static async getInstance(): Promise<Rhubarb> {
-    if (!Rhubarb.instance) {
-      Rhubarb.instance = new Rhubarb();
-    }
-    return Rhubarb.instance;
-  }
-
-  async initialize(): Promise<void> {
+  private static async getModule(): Promise<RhubarbWasmModule> {
     if (!this.wasmModule) {
-      this.wasmModule = await initWasmModule();
+      this.wasmModule = initWasmModule();
     }
+    return this.wasmModule;
   }
 
-  async getLipSync(audioBase64: string, options: RhubarbOptions = {}): Promise<LipSyncResult> {
-    await this.initialize();
-    if (!this.wasmModule) {
-      throw new Error('WASM module not initialized');
-    }
-    return getLipSyncData(audioBase64, options.dialogText);
+  static async getLipSync(audioBase64: string, options: RhubarbOptions = {}): Promise<LipSyncResult> {
+    const module = await this.getModule();
+    return module.getLipSync(audioBase64, options.dialogText || '');
   }
 }
 
