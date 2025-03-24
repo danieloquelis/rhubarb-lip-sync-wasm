@@ -5,6 +5,14 @@
 #include <memory>
 #include <algorithm>
 #include <cstring>
+#include <map>
+#include <array>
+#include <chrono>
+#include <sstream>
+#include <thread>
+#include <iostream>
+#include <iomanip>
+#include <optional>
 #include "rhubarb/src/recognition/PocketSphinxRecognizer.h"
 #include "rhubarb/src/recognition/Recognizer.h"
 #include "rhubarb/src/audio/audioFileReading.h"
@@ -12,8 +20,21 @@
 #include "rhubarb/src/audio/BufferAudioClip.h"
 #include "rhubarb/src/tools/progress.h"
 #include "rhubarb/src/core/Shape.h"
+#include <boost/optional.hpp>
 
 using namespace emscripten;
+
+// Debug logging helper
+void debugLog(const std::string& message) {
+    std::cerr << "[DEBUG] " << message << std::endl;
+}
+
+template<typename T>
+std::string formatNumber(T value, int precision = 2) {
+    std::ostringstream ss;
+    ss << std::fixed << std::setprecision(precision) << value;
+    return ss.str();
+}
 
 struct MouthCue {
   double start;
@@ -23,6 +44,19 @@ struct MouthCue {
 
 struct LipSyncResult {
   std::vector<MouthCue> mouthCues;
+};
+
+// Audio format information
+struct AudioFormatInfo {
+    int channelCount;
+    int frameRate;
+    int bitsPerSample;
+    
+    AudioFormatInfo() : 
+        channelCount(1),    // Mono
+        frameRate(16000),   // 16kHz
+        bitsPerSample(16)   // 16-bit PCM
+    {}
 };
 
 // Simple progress sink implementation
@@ -35,133 +69,307 @@ public:
     }
 };
 
-// Base64 decoding table
-static const unsigned char base64_decode_table[] = {
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 62, 0, 0, 0, 63,
-    52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 4,
-    5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
-    25, 0, 0, 0, 0, 0, 0, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38,
-    39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 0, 0, 0, 0, 0
-};
+// Helper function to get shape set for a phone with timing context
+ShapeSet getPhoneShapeSet(const Phone& phone, centiseconds duration, centiseconds previousDuration) {
+    static const ShapeSet any { Shape::A, Shape::B, Shape::C, Shape::D, Shape::E, Shape::F, Shape::G, Shape::H, Shape::X };
+    static const ShapeSet anyOpen { Shape::B, Shape::C, Shape::D, Shape::E, Shape::F, Shape::G, Shape::H };
 
-// Convert base64 string to audio buffer
-std::vector<float> base64ToAudioBuffer(const std::string& base64) {
-    std::vector<float> audioBuffer;
-    const char* input = base64.c_str();
-    size_t inputLength = base64.length();
-    
-    // Remove padding if present
-    while (inputLength > 0 && input[inputLength - 1] == '=') {
-        inputLength--;
+    switch (phone) {
+        case Phone::AO: return { Shape::E };
+        case Phone::AA: return { Shape::D };
+        case Phone::IY: return { Shape::B };
+        case Phone::UW: return { Shape::F };
+        case Phone::EH: return { Shape::C };
+        case Phone::IH: return { Shape::B };
+        case Phone::UH: return { Shape::F };
+        case Phone::AH: return duration < 20_cs ? ShapeSet{ Shape::C } : ShapeSet{ Shape::D };
+        case Phone::Schwa: return { Shape::B, Shape::C };
+        case Phone::AE: return { Shape::C };
+        case Phone::EY: return duration < 20_cs ? ShapeSet{ Shape::C, Shape::B } : ShapeSet{ Shape::D, Shape::B };
+        case Phone::AY: return duration < 20_cs ? ShapeSet{ Shape::C, Shape::B } : ShapeSet{ Shape::D, Shape::B };
+        case Phone::OW: return { Shape::E, Shape::F };
+        case Phone::AW: return duration < 30_cs ? ShapeSet{ Shape::C, Shape::E } : ShapeSet{ Shape::D, Shape::E };
+        case Phone::OY: return { Shape::E, Shape::B };
+        case Phone::ER: return duration < 7_cs ? ShapeSet{ Shape::B, Shape::C } : ShapeSet{ Shape::E };
+        
+        // Plosives
+        case Phone::P:
+        case Phone::B: return any;  // Note: Plosive timing handled separately
+        case Phone::T:
+        case Phone::D: return anyOpen;  // Note: Plosive timing handled separately
+        case Phone::K:
+        case Phone::G: return { Shape::B, Shape::C, Shape::E, Shape::F, Shape::H };
+        
+        // Affricates
+        case Phone::CH:
+        case Phone::JH: return { Shape::B, Shape::F };
+        
+        // Fricatives
+        case Phone::F:
+        case Phone::V: return { Shape::G };
+        case Phone::TH:
+        case Phone::DH:
+        case Phone::S:
+        case Phone::Z:
+        case Phone::SH:
+        case Phone::ZH: return { Shape::B, Shape::F };
+        case Phone::HH: return any;  // think "m-hm"
+        
+        // Nasals
+        case Phone::M: return { Shape::A };
+        case Phone::N: return { Shape::B, Shape::C, Shape::F, Shape::H };
+        case Phone::NG: return { Shape::B, Shape::C, Shape::E, Shape::F };
+        
+        // Liquids and Glides
+        case Phone::L: return duration < 20_cs 
+            ? ShapeSet{ Shape::B, Shape::E, Shape::F, Shape::H }
+            : ShapeSet{ Shape::H };
+        case Phone::R: return { Shape::B, Shape::E, Shape::F };
+        case Phone::Y: return { Shape::B, Shape::C, Shape::F };
+        case Phone::W: return { Shape::F };
+        
+        // Non-speech sounds
+        case Phone::Breath:
+        case Phone::Cough:
+        case Phone::Smack: return { Shape::C };
+        case Phone::Noise: return { Shape::B };
+        
+        default: return { Shape::X };
     }
-    
-    // Calculate output length
-    size_t outputLength = (inputLength * 3) / 4;
-    audioBuffer.resize(outputLength / sizeof(float));
-    
-    // Decode base64
-    size_t j = 0;
-    for (size_t i = 0; i < inputLength; i += 4) {
-        unsigned char b1 = base64_decode_table[input[i]];
-        unsigned char b2 = base64_decode_table[input[i + 1]];
-        unsigned char b3 = base64_decode_table[input[i + 2]];
-        unsigned char b4 = base64_decode_table[input[i + 3]];
-        
-        unsigned int value = (b1 << 18) | (b2 << 12) | (b3 << 6) | b4;
-        
-        // Convert to float
-        for (size_t k = 0; k < 3 && j < outputLength; k++) {
-            unsigned char byte = (value >> (16 - k * 8)) & 0xFF;
-            float sample = (float)byte / 127.5f - 1.0f;
-            audioBuffer[j++] = sample;
+}
+
+// Effort matrix for shape transitions
+Shape getClosestShape(Shape reference, const ShapeSet& shapes) {
+    if (shapes.empty()) {
+        return Shape::X;
+    }
+
+    static const std::array<std::array<Shape, 9>, 9> effortMatrix = {{
+        /* A */ {{ Shape::A, Shape::X, Shape::G, Shape::B, Shape::C, Shape::H, Shape::E, Shape::D, Shape::F }},
+        /* B */ {{ Shape::B, Shape::G, Shape::A, Shape::X, Shape::C, Shape::H, Shape::E, Shape::D, Shape::F }},
+        /* C */ {{ Shape::C, Shape::H, Shape::B, Shape::G, Shape::D, Shape::A, Shape::X, Shape::E, Shape::F }},
+        /* D */ {{ Shape::D, Shape::C, Shape::H, Shape::B, Shape::G, Shape::A, Shape::X, Shape::E, Shape::F }},
+        /* E */ {{ Shape::E, Shape::C, Shape::H, Shape::B, Shape::G, Shape::A, Shape::X, Shape::D, Shape::F }},
+        /* F */ {{ Shape::F, Shape::B, Shape::G, Shape::A, Shape::X, Shape::C, Shape::H, Shape::E, Shape::D }},
+        /* G */ {{ Shape::G, Shape::A, Shape::B, Shape::C, Shape::H, Shape::X, Shape::E, Shape::D, Shape::F }},
+        /* H */ {{ Shape::H, Shape::C, Shape::B, Shape::G, Shape::D, Shape::A, Shape::X, Shape::E, Shape::F }},
+        /* X */ {{ Shape::X, Shape::A, Shape::G, Shape::B, Shape::C, Shape::H, Shape::E, Shape::D, Shape::F }}
+    }};
+
+    const auto& closestShapes = effortMatrix[static_cast<size_t>(reference)];
+    for (Shape closestShape : closestShapes) {
+        if (shapes.find(closestShape) != shapes.end()) {
+            return closestShape;
         }
     }
+
+    return *shapes.begin();  // Fallback to first available shape
+}
+
+// Helper function to convert Shape to string
+std::string shapeToString(Shape shape) {
+    std::ostringstream stream;
+    stream << shape;  // This uses the operator<< defined for Shape
+    return stream.str();
+}
+
+// Process phones and generate mouth cues
+std::vector<MouthCue> processPhones(const BoundedTimeline<Phone>& phones, double audioDurationSeconds) {
+    std::vector<MouthCue> mouthCues;
+    Shape currentShape = Shape::X;
+    
+    // Add initial X shape if there's a gap at the start
+    if (phones.begin() != phones.end() && phones.begin()->getTimeRange().getStart() > 0_cs) {
+        mouthCues.push_back({
+            0.0,
+            phones.begin()->getTimeRange().getStart().count() / 100.0,
+            shapeToString(Shape::X)
+        });
+    }
+    
+    // Process each phone
+    TimeRange lastTimeRange;
+    for (auto it = phones.begin(); it != phones.end(); ++it) {
+        const Phone& phone = it->getValue();
+        const TimeRange& timeRange = it->getTimeRange();
+        const centiseconds duration = timeRange.getDuration();
+        const centiseconds previousDuration = it != phones.begin() 
+            ? std::prev(it)->getTimeRange().getDuration() 
+            : 0_cs;
+            
+        // Add X shape for gaps between phones (silence)
+        if (!lastTimeRange.empty() && timeRange.getStart() > lastTimeRange.getEnd()) {
+            const double gapStart = lastTimeRange.getEnd().count() / 100.0;
+            const double gapEnd = timeRange.getStart().count() / 100.0;
+            if (gapEnd - gapStart >= 0.1) { // Only add X for gaps >= 100ms
+                mouthCues.push_back({
+                    gapStart,
+                    gapEnd,
+                    shapeToString(Shape::X)
+                });
+            }
+        }
+        
+        // Get the set of possible shapes for this phone
+        ShapeSet shapeSet = getPhoneShapeSet(phone, duration, previousDuration);
+        
+        // Choose the best shape based on the current shape
+        Shape nextShape = getClosestShape(currentShape, shapeSet);
+        
+        // Special handling for plosives
+        if (phone == Phone::P || phone == Phone::B || phone == Phone::T || phone == Phone::D) {
+            const centiseconds occlusionDuration = std::min(std::max(previousDuration / 2, 4_cs), 12_cs);
+            const centiseconds occlusionStart = timeRange.getStart() - occlusionDuration;
+            
+            // Add pre-occlusion shape
+            if (phone == Phone::P || phone == Phone::B) {
+                mouthCues.push_back({
+                    occlusionStart.count() / 100.0,
+                    timeRange.getStart().count() / 100.0,
+                    shapeToString(Shape::A)
+                });
+            } else {
+                mouthCues.push_back({
+                    occlusionStart.count() / 100.0,
+                    timeRange.getStart().count() / 100.0,
+                    shapeToString(Shape::B)
+                });
+            }
+        }
+        
+        // Add the main shape
+        mouthCues.push_back({
+            timeRange.getStart().count() / 100.0,
+            timeRange.getEnd().count() / 100.0,
+            shapeToString(nextShape)
+        });
+        
+        currentShape = nextShape;
+        lastTimeRange = timeRange;
+    }
+    
+    // Add final X shape if there's silence at the end
+    if (!phones.empty()) {
+        const TimeRange& lastPhone = phones.rbegin()->getTimeRange();
+        if (lastPhone.getEnd().count() / 100.0 < audioDurationSeconds) {
+            mouthCues.push_back({
+                lastPhone.getEnd().count() / 100.0,
+                audioDurationSeconds,
+                shapeToString(Shape::X)
+            });
+        }
+    }
+    
+    // Consolidate similar consecutive shapes
+    std::vector<MouthCue> consolidatedCues;
+    for (size_t i = 0; i < mouthCues.size(); ++i) {
+        if (consolidatedCues.empty() || 
+            consolidatedCues.back().value != mouthCues[i].value ||
+            std::abs(consolidatedCues.back().end - mouthCues[i].start) > 0.001) {
+            consolidatedCues.push_back(mouthCues[i]);
+        } else {
+            consolidatedCues.back().end = mouthCues[i].end;
+        }
+    }
+    
+    return consolidatedCues;
+}
+
+// Convert raw PCM data to float audio buffer
+std::vector<float> pcmToAudioBuffer(const emscripten::val& buffer) {
+    debugLog("Converting PCM data to audio buffer");
+    
+    // Get the underlying ArrayBuffer
+    emscripten::val arrayBuffer = buffer["buffer"];
+    size_t byteLength = buffer["length"].as<size_t>();
+    size_t sampleCount = byteLength / sizeof(int16_t);
+    
+    debugLog("Input byte length: " + std::to_string(byteLength));
+    debugLog("Input sample count: " + std::to_string(sampleCount));
+    
+    // Create a typed array view of the buffer
+    emscripten::val int16Array = emscripten::val::global("Int16Array").new_(arrayBuffer);
+    
+    std::vector<float> audioBuffer(sampleCount);
+    float minSample = 0.0f, maxSample = 0.0f;
+    
+    // Convert 16-bit PCM to normalized float (-1.0 to 1.0)
+    for (size_t i = 0; i < sampleCount; i++) {
+        int16_t sample = int16Array[i].as<int16_t>();
+        float normalizedSample = static_cast<float>(sample) / 32768.0f;
+        audioBuffer[i] = normalizedSample;
+        
+        minSample = std::min(minSample, normalizedSample);
+        maxSample = std::max(maxSample, normalizedSample);
+    }
+    
+    debugLog("Audio buffer conversion complete");
+    debugLog("Sample range: " + formatNumber(minSample) + " to " + formatNumber(maxSample));
     
     return audioBuffer;
 }
 
-// Convert audio buffer to AudioClip
-std::unique_ptr<AudioClip> createAudioClip(const std::vector<float>& buffer) {
-    int sampleRate = 16000; // PocketSphinx expects 16kHz audio
-    return std::make_unique<BufferAudioClip>(buffer.data(), buffer.size(), sampleRate);
-}
-
-// Convert Phone to Shape character
-char getShapeChar(const Phone& phone) {
-    // This is a simplified mapping. You might want to implement a more sophisticated one.
-    switch (phone) {
-        case Phone::P:
-        case Phone::B:
-        case Phone::M:
-            return 'A';  // Closed mouth
-        case Phone::IY:
-        case Phone::T:
-        case Phone::D:
-        case Phone::N:
-        case Phone::S:
-        case Phone::Z:
-            return 'B';  // Clenched teeth
-        case Phone::EH:
-        case Phone::AH:
-            return 'C';  // Open mouth
-        case Phone::AA:
-        case Phone::AE:
-        case Phone::AY:
-            return 'D';  // Mouth wide open
-        case Phone::AO:
-        case Phone::OW:
-            return 'E';  // Rounded mouth
-        case Phone::UW:
-        case Phone::W:
-        case Phone::OY:
-            return 'F';  // Puckered lips
-        case Phone::F:
-        case Phone::V:
-            return 'G';  // "F", "V"
-        case Phone::L:
-            return 'H';  // "L"
-        default:
-            return 'X';  // Idle
-    }
+// Create AudioClip from processed buffer
+std::unique_ptr<AudioClip> createAudioClip(const std::vector<float>& buffer, const AudioFormatInfo& formatInfo) {
+    return std::make_unique<BufferAudioClip>(buffer.data(), buffer.size(), formatInfo.frameRate);
 }
 
 // Main function to process audio and generate lip sync data
-emscripten::val getLipSync(const std::string& audioBase64, const std::string& dialogText = "") {
+// Note: pcmData is expected to be a Buffer containing 16-bit PCM mono at 16kHz
+emscripten::val getLipSync(emscripten::val pcmData, const std::string& dialogText = "") {
+    debugLog("Starting lip sync processing");
     LipSyncResult result;
     
     try {
-        // Convert base64 to audio buffer
-        std::vector<float> audioBuffer = base64ToAudioBuffer(audioBase64);
+        // Initialize audio format info (we expect 16kHz mono PCM)
+        AudioFormatInfo formatInfo;
+        debugLog("Audio format - Channels: " + std::to_string(formatInfo.channelCount) + 
+                ", Rate: " + std::to_string(formatInfo.frameRate) + 
+                ", Bits: " + std::to_string(formatInfo.bitsPerSample));
+        
+        // Convert PCM to float audio buffer
+        std::vector<float> audioBuffer = pcmToAudioBuffer(pcmData);
+        debugLog("Audio buffer size: " + std::to_string(audioBuffer.size()));
+        
+        // Calculate audio duration in seconds
+        double audioDurationSeconds = static_cast<double>(audioBuffer.size()) / formatInfo.frameRate;
+        debugLog("Audio duration: " + formatNumber(audioDurationSeconds) + "s");
         
         // Create audio clip
-        auto audioClip = createAudioClip(audioBuffer);
+        auto audioClip = createAudioClip(audioBuffer, formatInfo);
+        debugLog("Audio clip created");
         
         // Create PocketSphinx recognizer
         auto recognizer = std::make_unique<PocketSphinxRecognizer>();
+        debugLog("PocketSphinx recognizer created");
         
         // Create progress sink
         WebProgressSink progressSink;
         
-        // Process audio and get recognition result
+        // Process audio and get recognition result with optimal thread count
         boost::optional<std::string> dialog = dialogText.empty() ? boost::none : boost::optional<std::string>(dialogText);
-        auto recognitionResult = recognizer->recognizePhones(*audioClip, dialog, 4, progressSink);
+        const int maxThreadCount = std::thread::hardware_concurrency();
+        debugLog("Using " + std::to_string(maxThreadCount) + " threads for recognition");
         
-        // Convert recognition result to mouth cues
-        for (const auto& entry : recognitionResult) {
-            const auto& timeRange = entry.getTimeRange();
-            const auto& phone = entry.getValue();
-            
-            result.mouthCues.push_back({
-                timeRange.getStart().count() / 100.0,  // Convert centiseconds to seconds
-                timeRange.getEnd().count() / 100.0,    // Convert centiseconds to seconds
-                std::string(1, getShapeChar(phone))    // Convert phone to shape character
-            });
+        auto recognitionResult = recognizer->recognizePhones(*audioClip, dialog, maxThreadCount, progressSink);
+        debugLog("Phone recognition complete");
+        
+        // Process phones to get mouth cues
+        result.mouthCues = processPhones(recognitionResult, audioDurationSeconds);
+        debugLog("Generated " + std::to_string(result.mouthCues.size()) + " mouth cues");
+        
+        // Log the first few mouth cues for debugging
+        const size_t maxCuesToLog = 5;
+        for (size_t i = 0; i < std::min(result.mouthCues.size(), maxCuesToLog); i++) {
+            const auto& cue = result.mouthCues[i];
+            debugLog("Cue " + std::to_string(i) + ": " + 
+                    formatNumber(cue.start) + "s to " + 
+                    formatNumber(cue.end) + "s = " + cue.value);
         }
         
     } catch (const std::exception& e) {
-        // Keep error logging for debugging
-        std::cerr << "Error processing audio: " << e.what() << std::endl;
+        debugLog("Error processing audio: " + std::string(e.what()));
+        throw;
     }
     
     // Convert vector to JavaScript array
@@ -194,6 +402,6 @@ EMSCRIPTEN_BINDINGS(rhubarb_wasm) {
     value_object<LipSyncResult>("LipSyncResult")
         .field("mouthCues", &LipSyncResult::mouthCues);
         
-    // Register the getLipSync function with proper return type
-    function("getLipSync", &getLipSync, allow_raw_pointers());
+    // Register the getLipSync function
+    function("getLipSync", &getLipSync);
 } 

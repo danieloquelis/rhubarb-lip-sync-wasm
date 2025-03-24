@@ -1,11 +1,13 @@
+/// <reference types="node" />
+
 export interface RhubarbOptions {
   dialogText?: string;
 }
 
 export interface MouthCue {
-  start: number;
-  end: number;
-  value: string;
+  start: number;  // Start time in seconds
+  end: number;    // End time in seconds
+  value: string;  // Shape value (A, B, C, D, E, F, G, H, X)
 }
 
 export interface LipSyncResult {
@@ -13,5 +15,5 @@ export interface LipSyncResult {
 }
 
 export interface RhubarbWasmModule {
-  getLipSync: (audioBase64: string, dialogText?: string) => LipSyncResult;
+  getLipSync: (pcmData: Buffer<ArrayBuffer>, dialogText?: string) => LipSyncResult;
 }
