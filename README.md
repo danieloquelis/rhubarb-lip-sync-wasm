@@ -13,6 +13,7 @@ All credit for the core lip sync technology and algorithms goes to Daniel S. Wol
 This package is particularly useful for:
 
 - AI Agents and Virtual Characters
+
   - Chatbots with animated avatars
   - Virtual presenters and hosts
   - Digital humans and AI assistants
@@ -37,19 +38,19 @@ yarn add rhubarb-lip-sync-wasm
 ## Usage
 
 ```typescript
-import { Rhubarb } from 'rhubarb-lip-sync-wasm';
+import { Rhubarb } from "rhubarb-lip-sync-wasm";
 
 // Example usage with an AI agent's audio response
-async function generateLipSync(audioBase64: string) {
+async function generateLipSync(pcmBuffer: Buffer<ArrayBuffer>) {
   try {
-    const result = await Rhubarb.getLipSync(audioBase64, {
-      dialogText: 'Optional dialog text for better recognition'
+    const result = await Rhubarb.getLipSync(pcmBuffer, {
+      dialogText: "Optional dialog text for better recognition",
     });
 
     // result.mouthCues contains an array of mouth shapes with timings
     console.log(result.mouthCues);
   } catch (error) {
-    console.error('Error generating lip sync:', error);
+    console.error("Error generating lip sync:", error);
   }
 }
 ```
@@ -62,13 +63,14 @@ Generates lip sync data from an audio file.
 
 #### Parameters
 
-- `audioBase64`: string - Base64 encoded audio file (WAV format)
+- `pcmBuffer`: Buffer<ArrayBuffer> - Raw PCM audio buffer (16KHz)
 - `options`: RhubarbOptions (optional)
   - `dialogText`: string - Optional text to guide the recognition process. If provided, it helps PocketSphinx better recognize the speech. If not provided, PocketSphinx will perform recognition without text guidance.
 
 #### Returns
 
 Promise<LipSyncResult> containing:
+
 - `mouthCues`: Array of mouth shapes with timings
   - `start`: number - Start time in seconds
   - `end`: number - End time in seconds
@@ -96,7 +98,7 @@ The WebAssembly port maintains these features while making them available in a J
 
 While this port aims to maintain feature parity with the original Rhubarb Lip Sync, there are some differences due to the web environment:
 
-1. Input is limited to base64-encoded WAV files
+1. Input is limited to raw PCM 16KHz audio buffer
 2. All processing is done in-memory
 3. Optimized for use in web applications
 4. Added TypeScript support
@@ -109,6 +111,9 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 The original Rhubarb Lip Sync is also licensed under the MIT License. See the [original project](https://github.com/DanielSWolf/rhubarb-lip-sync) for more details.
 
+This project is a WebAssembly port of Rhubarb Lip Sync (https://github.com/DanielSWolf/rhubarb-lip-sync)
+Original work Copyright (c) Daniel S. Wolf
+
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request. For major changes, please open an issue first to discuss what you would like to change. 
+Contributions are welcome! Please feel free to submit a Pull Request. For major changes, please open an issue first to discuss what you would like to change.
