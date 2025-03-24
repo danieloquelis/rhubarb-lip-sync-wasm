@@ -1,6 +1,8 @@
+/// <reference types="node" />
+
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
-import { RhubarbWasmModule, LipSyncResult, MouthCue } from "./types.js";
+import { RhubarbWasmModule, LipSyncResult } from "./types.js";
 
 let wasmModule: RhubarbWasmModule | null = null;
 
@@ -22,12 +24,22 @@ export async function initWasmModule(): Promise<RhubarbWasmModule> {
   return instance;
 }
 
+/**
+ * Generate lip sync data from PCM audio data
+ * @param pcmData Buffer containing 16-bit PCM audio data at 16kHz mono
+ * @param dialogText Optional dialog text for improved recognition
+ * @returns Promise resolving to lip sync result with mouth cues
+ */
 export async function getLipSyncData(
-  audioBase64: string,
+  pcmData: Buffer<ArrayBuffer>,
   dialogText?: string
 ): Promise<LipSyncResult> {
+  if (!Buffer.isBuffer(pcmData)) {
+    throw new Error('pcmData must be a Buffer containing 16-bit PCM audio data at 16kHz mono');
+  }
+
   const module = await initWasmModule();
-  const result = module.getLipSync(audioBase64, dialogText || "");
+  const result = module.getLipSync(pcmData, dialogText || "");
   return result;
 }
 
