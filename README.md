@@ -1,5 +1,10 @@
 # Rhubarb Lip Sync WASM
 
+![status: beta](https://img.shields.io/badge/status-beta-orange)
+> 🚧 **Beta Notice**  
+> This package is currently in **beta**.  
+> I'm actively looking for feedback — please open an issue or discussion if you have suggestions!
+
 A WebAssembly port of [Rhubarb Lip Sync](https://github.com/DanielSWolf/rhubarb-lip-sync) optimized for web applications. This package provides lip-sync functionality by analyzing audio files and generating mouth shapes for animation. Perfect for creating realistic mouth movements for AI agents, virtual characters, and interactive applications.
 
 ## Acknowledgments
